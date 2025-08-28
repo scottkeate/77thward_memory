@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BYU 77th Ward - Name Memory App</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <style>
+        .card-container {
+            height: 100vh;
+            height: 100dvh;
+        }
+        
+        .photo-container {
+            position: relative;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .member-photo {
+            transition: opacity 0.3s ease-in-out;
+        }
+        
+        .photo-loading {
+            opacity: 0;
+        }
+        
+        .photo-loaded {
+            opacity: 1;
+        }
+        
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .silhouette {
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23ffffff"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>') no-repeat center;
+            background-size: 60px 60px;
+            opacity: 0.3;
+        }
+        
+        .tap-hint {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans overflow-hidden">
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="fixed inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center z-50">
+        <div class="text-center text-white">
+            <div class="loading-spinner w-8 h-8 border-4 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
+            <h2 class="text-2xl font-bold mb-2">BYU 77th Ward</h2>
+            <p class="text-lg opacity-90">Loading Members...</p>
+            <div id="loadingProgress" class="mt-4 text-sm opacity-75"></div>
+        </div>
+    </div>
+
+    <!-- Error Screen -->
+    <div id="errorScreen" class="hidden fixed inset-0 bg-gradient-to-br from-red-500 to-purple-700 flex items-center justify-center z-40">
+        <div class="text-center text-white px-8">
+            <div class="text-6xl mb-6">
+                <i class="fas fa-exclamation-triangle text-red-300"></i>
+            </div>
+            <h2 class="text-3xl font-bold mb-4">No members available yet.</h2>
+            <p class="text-lg mb-8 opacity-90">Unable to load member data. Please check your internet connection and try again.</p>
+            <button id="retryButton" class="bg-blue-500 hover:bg-blue-600 text-white px-8 py-3 rounded-full text-lg font-semibold transition-colors">
+                <i class="fas fa-redo mr-2"></i>Try Again
+            </button>
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div id="appContainer" class="hidden">
+        <!-- Screen One: Photo View -->
+        <div id="photoScreen" class="card-container flex flex-col">
+            <!-- Photo Container -->
+            <div id="photoContainer" class="photo-container flex-1 flex items-center justify-center relative overflow-hidden cursor-pointer">
+                <!-- Loading State -->
+                <div id="photoLoading" class="absolute inset-0 flex items-center justify-center">
+                    <div class="text-center text-white">
+                        <div class="loading-spinner w-8 h-8 border-4 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
+                        <p class="text-lg">Loading photo...</p>
+                    </div>
+                </div>
+                
+                <!-- Image -->
+                <img id="memberPhoto" class="member-photo photo-loading w-full h-full object-cover" alt="Member photo" style="display: none;">
+                
+                <!-- Silhouette Fallback -->
+                <div id="photoFallback" class="silhouette w-full h-full flex items-center justify-center" style="display: none;">
+                    <div class="text-white text-center">
+                        <div class="text-6xl mb-4 opacity-50">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <p class="text-lg opacity-75">Photo not available</p>
+                    </div>
+                </div>
+                
+                <!-- Tap Hint -->
+                <div class="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-center tap-hint">
+                    <div class="bg-black bg-opacity-30 rounded-full px-4 py-2">
+                        <i class="fas fa-hand-pointer mr-2"></i>
+                        <span class="text-sm">Tap for details</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Navigation -->
+            <div class="bg-white shadow-lg p-4">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center text-gray-600">
+                        <span id="memberCounter" class="text-sm font-medium">1 of 1</span>
+                        <button id="reshuffleButton" class="ml-3 p-2 text-gray-400 hover:text-blue-500 transition-colors" title="Reshuffle" style="display: none;">
+                            <i class="fas fa-random"></i>
+                        </button>
+                    </div>
+                    
+                    <button id="nextButton" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-full font-semibold transition-colors">
+                        Next <i class="fas fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+                
+                <div class="mt-3 text-center text-xs text-gray-500">
+                    <span>Space/→ = Next • Enter = Details</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Screen Two: Details View -->
+        <div id="detailScreen" class="card-container flex flex-col bg-white hidden">
+            <!-- Header with Photo -->
+            <div class="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6 pb-8">
+                <div class="flex items-start">
+                    <!-- Small Photo -->
+                    <div class="w-20 h-20 rounded-full overflow-hidden bg-white bg-opacity-20 flex-shrink-0 mr-4">
+                        <img id="detailPhoto" class="w-full h-full object-cover" alt="Member photo">
+                        <div id="detailPhotoFallback" class="w-full h-full flex items-center justify-center silhouette" style="display: none;">
+                            <i class="fas fa-user text-white text-2xl"></i>
+                        </div>
+                    </div>
+                    
+                    <!-- Name -->
+                    <div class="flex-1 min-w-0">
+                        <h1 id="memberName" class="text-3xl font-bold mb-1 leading-tight">Member Name</h1>
+                        <p id="memberFullName" class="text-lg opacity-90">Full Name</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Details List -->
+            <div class="flex-1 overflow-y-auto p-6">
+                <div id="memberDetails" class="space-y-4">
+                    <!-- Details will be populated here -->
+                </div>
+            </div>
+            
+            <!-- Back Button -->
+            <div class="bg-gray-50 p-4 border-t">
+                <button id="backButton" class="w-full bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-full font-semibold transition-colors">
+                    <i class="fas fa-arrow-left mr-2"></i>Back to Photo
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preload Image (Hidden) -->
+    <img id="preloadImage" style="display: none;" alt="Preload">
+
+    <script>
+        // ========================================
+        // CONFIGURATION
+        // ========================================
+        const DEPLOYMENT_ID = "AKfycbyt0Ufpq4naR9BzTxEQ40vCOI30OFI3M6CpPnkAMV49IYxcnVw6qZm2GEoavE-lX3S3";
+        const META_URL = `https://script.google.com/macros/s/${DEPLOYMENT_ID}/exec`;
+        const DATA_URL = `https://script.google.com/macros/s/${DEPLOYMENT_ID}/exec`;
+
+        // ========================================
+        // PERFORMANCE & CACHING
+        // ========================================
+        const imageCache = new Map();
+        const loadedImages = new Set();
+        let preloadController = null;
+
+        // ========================================
+        // APPLICATION STATE
+        // ========================================
+        let appState = {
+            members: [],
+            publicKeep: [],
+            currentIndex: 0,
+            view: 'front', // 'front' or 'back'
+            isLoading: false
+        };
+
+        // ========================================
+        // IMAGE LOADING UTILITIES
+        // ========================================
+        function createImageLoader(url) {
+            return new Promise((resolve, reject) => {
+                if (loadedImages.has(url)) {
+                    resolve(url);
+                    return;
+                }
+
+                const img = new Image();
+                const timeoutId = setTimeout(() => {
+                    img.src = '';
+                    reject(new Error('Image load timeout'));
+                }, 10000); // 10 second timeout
+
+                img.onload = () => {
+                    clearTimeout(timeoutId);
+                    loadedImages.add(url);
+                    resolve(url);
+                };
+
+                img.onerror = () => {
+                    clearTimeout(timeoutId);
+                    reject(new Error('Image failed to load'));
+                };
+
+                img.src = url;
+            });
+        }
+
+        function preloadNextImage() {
+            if (preloadController) {
+                preloadController.abort();
+            }
+
+            const nextIndex = (appState.currentIndex + 1) % appState.members.length;
+            const nextMember = appState.members[nextIndex];
+            
+            if (nextMember && nextMember.PhotoUrl && !loadedImages.has(nextMember.PhotoUrl)) {
+                preloadController = new AbortController();
+                
+                // Preload in background
+                createImageLoader(nextMember.PhotoUrl)
+                    .catch(() => {}); // Ignore preload errors
+            }
+        }
+
+        async function loadMemberImage(member, imgElement, fallbackElement, loadingElement) {
+            if (!member.PhotoUrl) {
+                if (loadingElement) loadingElement.style.display = 'none';
+                if (imgElement) imgElement.style.display = 'none';
+                if (fallbackElement) fallbackElement.style.display = 'flex';
+                return;
+            }
+
+            try {
+                if (loadingElement) loadingElement.style.display = 'flex';
+                if (imgElement) imgElement.style.display = 'none';
+                if (fallbackElement) fallbackElement.style.display = 'none';
+
+                await createImageLoader(member.PhotoUrl);
+                
+                if (imgElement) {
+                    imgElement.src = member.PhotoUrl;
+                    imgElement.alt = `${member.PreferredName || member.FirstName} ${member.LastName}`;
+                    imgElement.classList.remove('photo-loading');
+                    imgElement.classList.add('photo-loaded');
+                    imgElement.style.display = 'block';
+                }
+                
+                if (loadingElement) loadingElement.style.display = 'none';
+                
+                // Start preloading next image
+                setTimeout(preloadNextImage, 100);
+                
+            } catch (error) {
+                console.warn('Failed to load image for', member.FirstName, error);
+                
+                if (loadingElement) loadingElement.style.display = 'none';
+                if (imgElement) imgElement.style.display = 'none';
+                if (fallbackElement) fallbackElement.style.display = 'flex';
+            }
+        }
+
+        // ========================================
+        // DATA LOADING
+        // ========================================
+        async function loadData() {
+            const timestamp = Date.now();
+            
+            try {
+                // Load metadata and data concurrently
+                const [metaResponse, dataResponse] = await Promise.all([
+                    fetchWithFallback(`${META_URL}?meta=1&t=${timestamp}`),
+                    fetchWithFallback(`${DATA_URL}?t=${timestamp}`)
+                ]);
+
+                if (!dataResponse.members || dataResponse.members.length === 0) {
+                    throw new Error('No members found');
+                }
+
+                appState.members = shuffleArray([...dataResponse.members]);
+                appState.publicKeep = metaResponse.publicKeep || [];
+                appState.currentIndex = 0;
+
+                console.log(`Loaded ${appState.members.length} members`);
+                return true;
+                
+            } catch (error) {
+                console.error('Failed to load data:', error);
+                throw error;
+            }
+        }
+
+        async function fetchWithFallback(url) {
+            // Try JSONP first
+            try {
+                return await fetchJSONP(url);
+            } catch (error) {
+                console.warn('JSONP failed, trying fetch:', error);
+                
+                // Fallback to regular fetch
+                const response = await fetch(url, { 
+                    cache: 'no-store',
+                    mode: 'cors'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                return await response.json();
+            }
+        }
+
+        function fetchJSONP(url) {
+            return new Promise((resolve, reject) => {
+                const callbackName = `jsonp_callback_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                const script = document.createElement('script');
+                const timeoutId = setTimeout(() => {
+                    cleanup();
+                    reject(new Error('JSONP timeout'));
+                }, 15000);
+
+                function cleanup() {
+                    clearTimeout(timeoutId);
+                    if (script.parentNode) {
+                        script.parentNode.removeChild(script);
+                    }
+                    delete window[callbackName];
+                }
+
+                window[callbackName] = (data) => {
+                    cleanup();
+                    resolve(data);
+                };
+
+                script.onerror = () => {
+                    cleanup();
+                    reject(new Error('JSONP script error'));
+                };
+
+                script.src = `${url}&callback=${callbackName}`;
+                document.head.appendChild(script);
+            });
+        }
+
+        // ========================================
+        // UTILITY FUNCTIONS
+        // ========================================
+        function shuffleArray(array) {
+            const shuffled = [...array];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
+        function formatPhone(phone) {
+            if (!phone) return '';
+            const cleaned = phone.replace(/\D/g, '');
+            if (cleaned.length === 10) {
+                return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+            }
+            return phone;
+        }
+
+        function formatFieldName(field) {
+            return field.replace(/([A-Z])/g, ' $1')
+                       .replace(/^./, str => str.toUpperCase())
+                       .trim();
+        }
+
+        // ========================================
+        // UI RENDERING
+        // ========================================
+        async function renderCurrentMember() {
+            const member = appState.members[appState.currentIndex];
+            if (!member) return;
+
+            // Update counter
+            document.getElementById('memberCounter').textContent = 
+                `${appState.currentIndex + 1} of ${appState.members.length}`;
+
+            // Show reshuffle button if we're wrapping around
+            const reshuffleButton = document.getElementById('reshuffleButton');
+            reshuffleButton.style.display = appState.currentIndex === 0 && appState.members.length > 1 ? 'block' : 'none';
+
+            if (appState.view === 'front') {
+                await renderPhotoScreen(member);
+            } else {
+                await renderDetailScreen(member);
+            }
+        }
+
+        async function renderPhotoScreen(member) {
+            const photoElement = document.getElementById('memberPhoto');
+            const fallbackElement = document.getElementById('photoFallback');
+            const loadingElement = document.getElementById('photoLoading');
+
+            // Reset photo state
+            photoElement.classList.remove('photo-loaded');
+            photoElement.classList.add('photo-loading');
+
+            await loadMemberImage(member, photoElement, fallbackElement, loadingElement);
+        }
+
+        async function renderDetailScreen(member) {
+            // Load detail photo
+            const detailPhoto = document.getElementById('detailPhoto');
+            const detailFallback = document.getElementById('detailPhotoFallback');
+            
+            if (member.PhotoUrl && loadedImages.has(member.PhotoUrl)) {
+                detailPhoto.src = member.PhotoUrl;
+                detailPhoto.style.display = 'block';
+                detailFallback.style.display = 'none';
+            } else {
+                detailPhoto.style.display = 'none';
+                detailFallback.style.display = 'flex';
+            }
+
+            // Update name
+            const displayName = member.PreferredName || member.FirstName;
+            document.getElementById('memberName').textContent = displayName;
+            document.getElementById('memberFullName').textContent = `${member.FirstName} ${member.LastName}`;
+
+            // Render details
+            const detailsContainer = document.getElementById('memberDetails');
+            detailsContainer.innerHTML = '';
+
+            const fieldsToShow = appState.publicKeep.length > 0 ? appState.publicKeep : Object.keys(member);
+            
+            fieldsToShow.forEach(field => {
+                if (field === 'MemberID' || !member[field] || member[field].toString().trim() === '') return;
+
+                let value = member[field];
+                let label = formatFieldName(field);
+
+                // Special formatting
+                if (field === 'Phone') {
+                    value = formatPhone(value);
+                } else if (field === 'Location' && value) {
+                    // Use Location if available
+                } else if (field === 'City' && member.State && !member.Location) {
+                    value = `${member.City}, ${member.State}`;
+                } else if (field === 'State' && member.City && !member.Location) {
+                    return; // Skip state if we already showed city, state
+                }
+
+                if (value && value.toString().trim() !== '') {
+                    const detailDiv = document.createElement('div');
+                    detailDiv.className = 'border-b border-gray-100 pb-3 fade-in';
+                    detailDiv.innerHTML = `
+                        <div class="text-sm font-medium text-gray-600 mb-1">${label}</div>
+                        <div class="text-lg text-gray-900">${value}</div>
+                    `;
+                    detailsContainer.appendChild(detailDiv);
+                }
+            });
+        }
+
+        // ========================================
+        // NAVIGATION
+        // ========================================
+        function nextMember() {
+            if (appState.isLoading) return;
+            
+            appState.currentIndex = (appState.currentIndex + 1) % appState.members.length;
+            appState.view = 'front';
+            switchToPhotoScreen();
+            renderCurrentMember();
+        }
+
+        function flipToDetails() {
+            if (appState.isLoading) return;
+            
+            appState.view = 'back';
+            switchToDetailScreen();
+            renderCurrentMember();
+        }
+
+        function backToPhoto() {
+            if (appState.isLoading) return;
+            
+            appState.view = 'front';
+            switchToPhotoScreen();
+            renderCurrentMember();
+        }
+
+        function reshuffle() {
+            appState.members = shuffleArray(appState.members);
+            appState.currentIndex = 0;
+            renderCurrentMember();
+        }
+
+        function switchToPhotoScreen() {
+            document.getElementById('photoScreen').classList.remove('hidden');
+            document.getElementById('detailScreen').classList.add('hidden');
+        }
+
+        function switchToDetailScreen() {
+            document.getElementById('photoScreen').classList.add('hidden');
+            document.getElementById('detailScreen').classList.remove('hidden');
+        }
+
+        // ========================================
+        // ERROR HANDLING
+        // ========================================
+        function showError() {
+            document.getElementById('loadingScreen').classList.add('hidden');
+            document.getElementById('errorScreen').classList.remove('hidden');
+            document.getElementById('appContainer').classList.add('hidden');
+        }
+
+        function hideError() {
+            document.getElementById('errorScreen').classList.add('hidden');
+        }
+
+        function showApp() {
+            document.getElementById('loadingScreen').classList.add('hidden');
+            document.getElementById('errorScreen').classList.add('hidden');
+            document.getElementById('appContainer').classList.remove('hidden');
+        }
+
+        // ========================================
+        // INITIALIZATION
+        // ========================================
+        async function initializeApp() {
+            try {
+                appState.isLoading = true;
+                document.getElementById('loadingProgress').textContent = 'Connecting to server...';
+                
+                await loadData();
+                
+                document.getElementById('loadingProgress').textContent = 'Setting up interface...';
+                await new Promise(resolve => setTimeout(resolve, 500)); // Brief delay for UX
+                
+                showApp();
+                await renderCurrentMember();
+                
+            } catch (error) {
+                console.error('Failed to initialize app:', error);
+                showError();
+            } finally {
+                appState.isLoading = false;
+            }
+        }
+
+        // ========================================
+        // EVENT LISTENERS
+        // ========================================
+        document.addEventListener('DOMContentLoaded', () => {
+            // Navigation buttons
+            document.getElementById('nextButton').addEventListener('click', nextMember);
+            document.getElementById('backButton').addEventListener('click', backToPhoto);
+            document.getElementById('reshuffleButton').addEventListener('click', reshuffle);
+            document.getElementById('retryButton').addEventListener('click', () => {
+                hideError();
+                document.getElementById('loadingScreen').classList.remove('hidden');
+                initializeApp();
+            });
+
+            // Photo click to flip
+            document.getElementById('photoContainer').addEventListener('click', flipToDetails);
+
+            // Keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (appState.isLoading) return;
+                
+                switch (e.code) {
+                    case 'Space':
+                    case 'ArrowRight':
+                        e.preventDefault();
+                        nextMember();
+                        break;
+                    case 'Enter':
+                        e.preventDefault();
+                        if (appState.view === 'front') {
+                            flipToDetails();
+                        } else {
+                            backToPhoto();
+                        }
+                        break;
+                    case 'Escape':
+                        if (appState.view === 'back') {
+                            backToPhoto();
+                        }
+                        break;
+                }
+            });
+
+            // Initialize app
+            initializeApp();
+        });
+
+        // ========================================
+        // SERVICE WORKER REGISTRATION (Optional)
+        // ========================================
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('data:text/javascript,')
+                    .catch(() => {}); // Ignore registration failures
+            });
+        }
+    </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" data-cf-beacon='{"rayId":"9765dad37e3b4ef5","serverTiming":{"name":{"cfExtPri":true,"cfEdge":true,"cfOrigin":true,"cfL4":true,"cfSpeedBrain":true,"cfCacheStatus":true}},"version":"2025.8.0","token":"4edd5f8ec12a48cfa682ab8261b80a79"}' crossorigin="anonymous"></script>
+</body>
+</html>
+    <script id="html_badge_script1">
+        window.__genspark_remove_badge_link = "https://www.genspark.ai/api/html_badge/" +
+            "remove_badge?token=To%2FBnjzloZ3UfQdcSaYfDmZDBrKMZIho9ZHpEtDXi48P6VjL4HLOBOqiNhVBIJdfThhva7HQZ3BJa3C1jsfcx9ol4%2FbRm7jgVLEhtSxtbuFOa6Nk3Qq9KGxIn4kYOCYy74mJ3bvJfiuvGXbcokVtfLoJ%2Bo%2FhfI60iO6wjRyEdxiCeifrEg7aibvaebsM6QqzOMzSgPzWBofHPikQhJrt7vYWMdO2QTUVBR13AEwzknH%2FTc5%2FIcG2FeJx5rIjeHGopuryZbLFOxp8TvkAsgtuodoGcxW68kkGBbeTE5PdJCr3enuLQN0h%2FaOL7Y3dVo0F1VZr62Uu9StrNTiAUPlaDO6klrODrWZygE6DWMXoMISlH8L2PFjTO3h1T%2BksI7xQuZX5LOtTz%2FSDit%2B%2FDS6Byr%2BGzxVy1LegGeKuFCtWMFgB0SyzobDW4q4%2FojzamvFUAS%2F3gi20%2FyG0SVhablRi%2BekxCCZsGGZNmS7dLxbFqFNUH3AHvxfV6lzLhjMQx74WPzEVXaPIs20yrtLa5WzFWDH8gEhuQCpR7R4Lq5XwoEw%3D";
+        window.__genspark_locale = "en-US";
+        window.__genspark_token = "To/BnjzloZ3UfQdcSaYfDmZDBrKMZIho9ZHpEtDXi48P6VjL4HLOBOqiNhVBIJdfThhva7HQZ3BJa3C1jsfcx9ol4/bRm7jgVLEhtSxtbuFOa6Nk3Qq9KGxIn4kYOCYy74mJ3bvJfiuvGXbcokVtfLoJ+o/hfI60iO6wjRyEdxiCeifrEg7aibvaebsM6QqzOMzSgPzWBofHPikQhJrt7vYWMdO2QTUVBR13AEwzknH/Tc5/IcG2FeJx5rIjeHGopuryZbLFOxp8TvkAsgtuodoGcxW68kkGBbeTE5PdJCr3enuLQN0h/aOL7Y3dVo0F1VZr62Uu9StrNTiAUPlaDO6klrODrWZygE6DWMXoMISlH8L2PFjTO3h1T+ksI7xQuZX5LOtTz/SDit+/DS6Byr+GzxVy1LegGeKuFCtWMFgB0SyzobDW4q4/ojzamvFUAS/3gi20/yG0SVhablRi+ekxCCZsGGZNmS7dLxbFqFNUH3AHvxfV6lzLhjMQx74WPzEVXaPIs20yrtLa5WzFWDH8gEhuQCpR7R4Lq5XwoEw=";
+    </script>
+    
+    <script id="html_notice_dialog_script" src="https://www.genspark.ai/notice_dialog.js"></script>
+    
