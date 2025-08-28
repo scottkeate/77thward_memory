@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BYU 77th Ward - Name Memory App</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <style>
+        .card-container {
+            perspective: 1000px;
+        }
+        .card {
+            transform-style: preserve-3d;
+            transition: transform 0.6s;
+        }
+        .card.flipped {
+            transform: rotateY(180deg);
+        }
+        .card-front, .card-back {
+            backface-visibility: hidden;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+        .card-back {
+            transform: rotateY(180deg);
+        }
+        .member-photo {
+            object-fit: cover;
+            object-position: center;
+        }
+        .silhouette {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
+        <div class="loading-spinner mb-4"></div>
+        <h2 class="text-xl font-semibold text-gray-700 mb-2">Loading Ward Members...</h2>
+        <p class="text-gray-500 text-center px-4">Fetching fresh data from the ward directory</p>
+    </div>
+
+    <!-- Error Screen -->
+    <div id="errorScreen" class="fixed inset-0 bg-gradient-to-br from-red-400 to-purple-600 flex flex-col items-center justify-center z-50 hidden text-white text-center p-8">
+        <i class="fas fa-exclamation-triangle text-6xl mb-6 text-red-200"></i>
+        <h2 class="text-2xl font-bold mb-4">Unable to Load Members</h2>
+        <p class="text-lg mb-6 max-w-md">There was an issue connecting to the ward directory. Please check your internet connection and try again.</p>
+        <button id="retryBtn" class="bg-white bg-opacity-20 hover:bg-opacity-30 transition-all duration-300 px-6 py-3 rounded-full text-lg font-semibold">
+            <i class="fas fa-redo mr-2"></i>Try Again
+        </button>
+    </div>
+
+    <!-- Main App -->
+    <div id="app" class="hidden w-full max-w-md mx-auto">
+        <!-- Card Container -->
+        <div class="card-container">
+            <div id="memberCard" class="card relative w-full h-96 rounded-2xl shadow-2xl">
+                
+                <!-- Front Side - Photo View -->
+                <div class="card-front bg-white rounded-2xl overflow-hidden cursor-pointer" onclick="flipCard()">
+                    <div class="relative w-full h-full">
+                        <img id="memberPhoto" class="member-photo w-full h-full" alt="Member Photo" style="display: none;">
+                        <div id="photoPlaceholder" class="silhouette w-full h-full">
+                            <i class="fas fa-user text-6xl text-white opacity-50"></i>
+                        </div>
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent pointer-events-none"></div>
+                        <div class="absolute bottom-4 left-4 right-4 text-white">
+                            <p class="text-sm opacity-80">Tap to reveal details</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Back Side - Details View -->
+                <div class="card-back bg-white rounded-2xl p-6 overflow-y-auto">
+                    <div class="flex items-start mb-4">
+                        <img id="memberPhotoSmall" class="w-16 h-16 rounded-full object-cover mr-4 flex-shrink-0" alt="Member Photo Small">
+                        <div class="flex-1">
+                            <h2 id="memberName" class="text-xl font-bold text-gray-800 mb-1"></h2>
+                            <p id="memberFullName" class="text-gray-600 text-sm"></p>
+                        </div>
+                    </div>
+                    
+                    <div id="memberDetails" class="space-y-3">
+                        <!-- Dynamic member details will be inserted here -->
+                    </div>
+
+                    <button onclick="flipCard()" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-300">
+                        <i class="fas fa-arrow-left mr-2"></i>Back to Photo
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="flex justify-between items-center mt-6">
+            <div class="flex items-center text-gray-600">
+                <span id="memberCount" class="text-sm font-medium"></span>
+                <button id="reshuffleBtn" class="ml-2 p-2 hover:bg-gray-200 rounded-full transition-colors duration-300" onclick="reshuffleMembers()" title="Reshuffle">
+                    <i class="fas fa-random text-sm"></i>
+                </button>
+            </div>
+            
+            <button id="nextBtn" onclick="nextMember()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-300 focus:outline-none focus:ring-4 focus:ring-blue-300">
+                Next <i class="fas fa-arrow-right ml-2"></i>
+            </button>
+        </div>
+
+        <!-- Keyboard Shortcuts Info -->
+        <div class="mt-4 text-center text-xs text-gray-500">
+            <p><kbd class="px-1 bg-gray-200 rounded">Space</kbd> or <kbd class="px-1 bg-gray-200 rounded">→</kbd> Next • <kbd class="px-1 bg-gray-200 rounded">Enter</kbd> Flip</p>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const DEPLOYMENT_ID = "AKfycbyt0Ufpq4naR9BzTxEQ40vCOI30OFI3M6CpPnkAMV49IYxcnVw6qZm2GEoavE-lX3S3";
+        
+        // App State
+        let members = [];
+        let currentIndex = 0;
+        let isFlipped = false;
+        let publicKeep = [];
+
+        // DOM Elements
+        const loadingScreen = document.getElementById('loadingScreen');
+        const errorScreen = document.getElementById('errorScreen');
+        const app = document.getElementById('app');
+        const memberCard = document.getElementById('memberCard');
+        const memberPhoto = document.getElementById('memberPhoto');
+        const photoPlaceholder = document.getElementById('photoPlaceholder');
+        const memberPhotoSmall = document.getElementById('memberPhotoSmall');
+        const memberName = document.getElementById('memberName');
+        const memberFullName = document.getElementById('memberFullName');
+        const memberDetails = document.getElementById('memberDetails');
+        const memberCount = document.getElementById('memberCount');
+        const nextBtn = document.getElementById('nextBtn');
+        const retryBtn = document.getElementById('retryBtn');
+
+        // Fisher-Yates Shuffle Algorithm
+        function shuffle(array) {
+            const shuffled = [...array];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
+        // Format phone number
+        function formatPhone(phone) {
+            if (!phone) return '';
+            const cleaned = phone.replace(/\D/g, '');
+            if (cleaned.length === 10) {
+                return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+            }
+            return phone;
+        }
+
+        // Load data with multiple fallback methods
+        async function loadData() {
+            const timestamp = Date.now();
+            
+            // Try different approaches to bypass CORS
+            const methods = [
+                // Method 1: Direct fetch
+                () => fetch(`https://script.google.com/macros/s/${DEPLOYMENT_ID}/exec?t=${timestamp}`, { 
+                    cache: "no-store",
+                    mode: 'cors'
+                }),
+                
+                // Method 2: Try with different headers
+                () => fetch(`https://script.google.com/macros/s/${DEPLOYMENT_ID}/exec?t=${timestamp}`, { 
+                    cache: "no-store",
+                    mode: 'no-cors'
+                }),
+                
+                // Method 3: Use a CORS proxy
+                () => fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(`https://script.google.com/macros/s/${DEPLOYMENT_ID}/exec?t=${timestamp}`)}`, {
+                    cache: "no-store"
+                })
+            ];
+
+            for (let i = 0; i < methods.length; i++) {
+                try {
+                    console.log(`Trying data loading method ${i + 1}...`);
+                    const response = await methods[i]();
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    let data;
+                    if (i === 2) {
+                        // CORS proxy returns wrapped data
+                        const proxyData = await response.json();
+                        data = JSON.parse(proxyData.contents);
+                    } else {
+                        data = await response.json();
+                    }
+                    
+                    console.log('Data loaded successfully:', data);
+                    
+                    if (data && data.members && Array.isArray(data.members)) {
+                        return data;
+                    } else {
+                        throw new Error('Invalid data structure received');
+                    }
+                } catch (error) {
+                    console.error(`Method ${i + 1} failed:`, error);
+                    if (i === methods.length - 1) {
+                        throw error;
+                    }
+                }
+            }
+        }
+
+        // Load metadata
+        async function loadMetadata() {
+            try {
+                const timestamp = Date.now();
+                const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(`https://script.google.com/macros/s/${DEPLOYMENT_ID}/exec?meta=1&t=${timestamp}`)}`, {
+                    cache: "no-store"
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load metadata');
+                }
+                
+                const proxyData = await response.json();
+                const metadata = JSON.parse(proxyData.contents);
+                
+                if (metadata && metadata.publicKeep && Array.isArray(metadata.publicKeep)) {
+                    publicKeep = metadata.publicKeep;
+                } else {
+                    // Default public fields if metadata fails
+                    publicKeep = ['Email', 'Phone', 'Location', 'Year', 'Major', 'Building', 'Room'];
+                }
+            } catch (error) {
+                console.warn('Failed to load metadata, using defaults:', error);
+                publicKeep = ['Email', 'Phone', 'Location', 'Year', 'Major', 'Building', 'Room'];
+            }
+        }
+
+        // Initialize app
+        async function initApp() {
+            try {
+                loadingScreen.classList.remove('hidden');
+                errorScreen.classList.add('hidden');
+                app.classList.add('hidden');
+
+                // Load metadata and data in parallel
+                const [_, data] = await Promise.all([
+                    loadMetadata(),
+                    loadData()
+                ]);
+
+                if (!data.members || data.members.length === 0) {
+                    throw new Error('No members found in the data');
+                }
+
+                // Initialize members
+                members = shuffle(data.members);
+                currentIndex = 0;
+                isFlipped = false;
+
+                // Update UI
+                updateMemberCount();
+                displayCurrentMember();
+                
+                // Preload first few images
+                preloadImages();
+
+                // Show app
+                loadingScreen.classList.add('hidden');
+                app.classList.remove('hidden');
+                app.classList.add('fade-in');
+
+            } catch (error) {
+                console.error('Failed to initialize app:', error);
+                showError();
+            }
+        }
+
+        // Show error screen
+        function showError() {
+            loadingScreen.classList.add('hidden');
+            app.classList.add('hidden');
+            errorScreen.classList.remove('hidden');
+        }
+
+        // Update member count display
+        function updateMemberCount() {
+            memberCount.textContent = `${currentIndex + 1} of ${members.length}`;
+        }
+
+        // Display current member
+        function displayCurrentMember() {
+            if (!members[currentIndex]) return;
+
+            const member = members[currentIndex];
+            
+            // Reset card to front
+            if (isFlipped) {
+                memberCard.classList.remove('flipped');
+                isFlipped = false;
+            }
+
+            // Update photos
+            updateMemberPhoto(member);
+            updateMemberDetails(member);
+            updateMemberCount();
+
+            // Preload next image
+            if (currentIndex + 1 < members.length) {
+                preloadImage(members[currentIndex + 1].PhotoUrl);
+            }
+        }
+
+        // Update member photo
+        function updateMemberPhoto(member) {
+            const photoUrl = member.PhotoUrl;
+            
+            if (photoUrl && photoUrl.trim() !== '') {
+                memberPhoto.src = photoUrl;
+                memberPhoto.alt = `${member.PreferredName || member.FirstName} ${member.LastName}`;
+                memberPhoto.style.display = 'block';
+                photoPlaceholder.style.display = 'none';
+                
+                memberPhoto.onerror = () => {
+                    memberPhoto.style.display = 'none';
+                    photoPlaceholder.style.display = 'flex';
+                };
+            } else {
+                memberPhoto.style.display = 'none';
+                photoPlaceholder.style.display = 'flex';
+            }
+
+            // Update small photo for back side
+            if (photoUrl && photoUrl.trim() !== '') {
+                memberPhotoSmall.src = photoUrl;
+                memberPhotoSmall.alt = `${member.PreferredName || member.FirstName} ${member.LastName}`;
+            } else {
+                memberPhotoSmall.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzIiIGZpbGw9IiNFNUU3RUIiLz4KPHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeD0iMTYiIHk9IjE2Ij4KPHBhdGggZD0iTTEyIDEyYzIuMjEgMCA0LTEuNzkgNC00cy0xLjc5LTQtNC00LTQgMS43OS00IDQgMS43OSA0IDQgNHptMCAyYy0yLjY3IDAtOCAxLjM0LTggNHY0aDEydjJoLTR2LTJoNFYxOGMwLTIuNjYtNS4zMy00LTgtNHoiIGZpbGw9IiM5Q0E0QUYiLz4KPC9zdmc+Cjwvc3ZnPgo=';
+            }
+        }
+
+        // Update member details
+        function updateMemberDetails(member) {
+            const preferredName = member.PreferredName || member.FirstName;
+            const fullName = `${member.FirstName} ${member.LastName}`;
+            
+            memberName.textContent = preferredName;
+            memberFullName.textContent = fullName !== preferredName ? fullName : '';
+
+            // Build details HTML
+            let detailsHTML = '';
+            
+            const fieldMap = {
+                'Email': member.Email,
+                'Phone': formatPhone(member.Phone),
+                'Location': member.Location || (member.City && member.State ? `${member.City}, ${member.State}` : ''),
+                'Year': member.Year,
+                'Major': member.Major,
+                'Building': member.Building,
+                'Room': member.Room,
+                'Gender': member.Gender
+            };
+
+            // Only show fields that are in publicKeep and have values
+            publicKeep.forEach(field => {
+                const value = fieldMap[field];
+                if (value && value.trim() !== '' && value !== 'undefined') {
+                    const icon = getFieldIcon(field);
+                    detailsHTML += `
+                        <div class="flex items-center text-sm">
+                            <i class="${icon} text-gray-500 w-5 mr-3 flex-shrink-0"></i>
+                            <span class="text-gray-700">${value}</span>
+                        </div>
+                    `;
+                }
+            });
+
+            memberDetails.innerHTML = detailsHTML;
+        }
+
+        // Get icon for field
+        function getFieldIcon(field) {
+            const iconMap = {
+                'Email': 'fas fa-envelope',
+                'Phone': 'fas fa-phone',
+                'Location': 'fas fa-map-marker-alt',
+                'Year': 'fas fa-graduation-cap',
+                'Major': 'fas fa-book',
+                'Building': 'fas fa-building',
+                'Room': 'fas fa-door-open',
+                'Gender': 'fas fa-user'
+            };
+            return iconMap[field] || 'fas fa-info-circle';
+        }
+
+        // Preload images
+        function preloadImages() {
+            const imagesToPreload = members.slice(0, 5); // Preload first 5 images
+            imagesToPreload.forEach(member => {
+                if (member.PhotoUrl) {
+                    preloadImage(member.PhotoUrl);
+                }
+            });
+        }
+
+        function preloadImage(src) {
+            if (src && src.trim() !== '') {
+                const img = new Image();
+                img.src = src;
+            }
+        }
+
+        // Navigation functions
+        function nextMember() {
+            currentIndex = (currentIndex + 1) % members.length;
+            displayCurrentMember();
+        }
+
+        function flipCard() {
+            memberCard.classList.toggle('flipped');
+            isFlipped = !isFlipped;
+        }
+
+        function reshuffleMembers() {
+            members = shuffle(members);
+            currentIndex = 0;
+            displayCurrentMember();
+        }
+
+        // Keyboard event handlers
+        document.addEventListener('keydown', (event) => {
+            switch(event.code) {
+                case 'Space':
+                case 'ArrowRight':
+                    event.preventDefault();
+                    nextMember();
+                    break;
+                case 'Enter':
+                    event.preventDefault();
+                    flipCard();
+                    break;
+                case 'ArrowLeft':
+                    event.preventDefault();
+                    if (isFlipped) {
+                        flipCard();
+                    }
+                    break;
+            }
+        });
+
+        // Event listeners
+        retryBtn.addEventListener('click', initApp);
+
+        // Initialize app when page loads
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" data-cf-beacon='{"rayId":"9764de1b2d406f69","serverTiming":{"name":{"cfExtPri":true,"cfEdge":true,"cfOrigin":true,"cfL4":true,"cfSpeedBrain":true,"cfCacheStatus":true}},"version":"2025.8.0","token":"4edd5f8ec12a48cfa682ab8261b80a79"}' crossorigin="anonymous"></script>
+</body>
+</html>
+    <script id="html_badge_script1">
+        window.__genspark_remove_badge_link = "https://www.genspark.ai/api/html_badge/" +
+            "remove_badge?token=To%2FBnjzloZ3UfQdcSaYfDjanwWc5DrFL%2B56LxIJY7wFbA%2By%2BhiNI4OS10mKMLovy3r%2FiSghNGXU7w31YbpGIlf5Iji4ZGoh81oLxVeJRDoWujo%2FrQ%2BYoipj2t9p2CcKjUDbo4UiSXgrt7NPuDa4KruNtxs7GbUGEA62wPvF1rTTXQo1S2Jhd7SeOuLmcZukjnks2NJG7VvsuwwtLU%2FlQncebJfDwBQkMrD6MYroaO330ufYzsPnsBPULa%2B0zgS4okHplkDVZFznHSpsY8NEgD1aDqKjcL08JkmrN0grZEZjGmyLO3HqU0RUkbZ%2BwpZDHnftgZAYjaj1K%2BNkh7nsUu0ZJVu9z6eHreuZDaMFmtk0sxwWpPBTAiEMzLXXvM%2FY6344Ss1z8Av%2F0lm5FdSWsWDAZxcWRv52%2BNliyJfkczZfYk5AwjXH0btN90zlSsduE0lWRNFhNP%2BP62j5eNHg6xyqSC55TeXSAiSZ8vU4NyGeMph4LneQdGrQa2pVNU%2FEH%2BNa%2B96iT1SEUkEN1JHJ1ruyiN9w45WhJO6z%2FSfczs9s%3D";
+        window.__genspark_locale = "en-US";
+        window.__genspark_token = "To/BnjzloZ3UfQdcSaYfDjanwWc5DrFL+56LxIJY7wFbA+y+hiNI4OS10mKMLovy3r/iSghNGXU7w31YbpGIlf5Iji4ZGoh81oLxVeJRDoWujo/rQ+Yoipj2t9p2CcKjUDbo4UiSXgrt7NPuDa4KruNtxs7GbUGEA62wPvF1rTTXQo1S2Jhd7SeOuLmcZukjnks2NJG7VvsuwwtLU/lQncebJfDwBQkMrD6MYroaO330ufYzsPnsBPULa+0zgS4okHplkDVZFznHSpsY8NEgD1aDqKjcL08JkmrN0grZEZjGmyLO3HqU0RUkbZ+wpZDHnftgZAYjaj1K+Nkh7nsUu0ZJVu9z6eHreuZDaMFmtk0sxwWpPBTAiEMzLXXvM/Y6344Ss1z8Av/0lm5FdSWsWDAZxcWRv52+NliyJfkczZfYk5AwjXH0btN90zlSsduE0lWRNFhNP+P62j5eNHg6xyqSC55TeXSAiSZ8vU4NyGeMph4LneQdGrQa2pVNU/EH+Na+96iT1SEUkEN1JHJ1ruyiN9w45WhJO6z/Sfczs9s=";
+    </script>
+    
+    <script id="html_notice_dialog_script" src="https://www.genspark.ai/notice_dialog.js"></script>
+    
